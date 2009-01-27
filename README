@@ -1,0 +1,21 @@
+Rodbtp is a ruby binding for the odbtp library
+(http://odbtp.sourceforge.net)
+
+To use you need to install first odbtp and
+in the same directory compile rodbtp.c file,
+futures release will have a correct extconf.rb,
+
+example:
+
+require 'rodbtp'
+
+rodb = Rodbtp.new
+rodb.connect(hostname, tcp_port, odbc_string_connection)
+
+qry = rodb.query("Select * from Customers")
+
+qry.each do |row|
+	puts row.inspect
+end
+
+rodb.disconnect
