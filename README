@@ -5,7 +5,13 @@ To use you need to install first odbtp and
 in the same directory compile rodbtp.c file,
 futures release will have a correct extconf.rb,
 
-example:
+To compile:
+
+gcc -I. -I. -I/usr/lib/ruby/1.8/i486-linux -I.  -fPIC -Wall -g -fno-strict-aliasing -O2  -fPIC  -c rodbtp.c
+gcc -shared -rdynamic -Wl,-export-dynamic   -L"/usr/lib" -o rodbtp.so rodbtp.o odbtp.o sockutil.o  -lruby1.8  -lpthread -ldl -lcrypt -lm   -lc
+
+
+Example:
 
 require 'rodbtp'
 

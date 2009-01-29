@@ -48,7 +48,7 @@ VALUE rodb_alloc(VALUE klass)
         odbHANDLE *hCon = malloc(sizeof(odbHANDLE));
 
         if(!(hCon = (odbHANDLE *)odbAllocate(NULL))) {
-                rb_raise(rb_eArgError, "value length must be 6");
+                rb_raise(rb_eException, "error on odbAllocate");
                 return Qnil;
         }
 
@@ -75,7 +75,7 @@ VALUE rodb_disconnect(VALUE klass)
         Data_Get_Struct(klass, odbHANDLE, hCon);
 
         if(!odbLogout((odbHANDLE)hCon, ODB_LOGIN_RESERVED)) {
-                rb_raise( rb_eException, "Logout Error:");
+                rb_raise( rb_eException, "Logout Error");
                 odbFree((odbHANDLE)hCon );
                 return Qnil;
         }
