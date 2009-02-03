@@ -1,23 +1,3 @@
-/**
- *   Rodbtp - Ruby binding for odbtp (http://odbtp.sourceforge.net)
- *   Copyright (C) 2009  Claudio Fiorini <claudio@cfiorini.it>
- *
- *   This program is free software: you can redistribute it and/or modify
- *   it under the terms of the GNU General Public License as published by
- *   the Free Software Foundation, either version 3 of the License, or
- *   (at your option) any later version.
- *
- *   This program is distributed in the hope that it will be useful,
- *   but WITHOUT ANY WARRANTY; without even the implied warranty of
- *   MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
- *   GNU General Public License for more details.
- *
- *   You should have received a copy of the GNU General Public License
- *   along with this program.  If not, see <http://www.gnu.org/licenses/>.
-**/
-
-/* Any help and suggestions are always welcome */
-
 #include "ruby.h"
 #include "rubyio.h"
 #include "odbtp.h"
@@ -43,12 +23,22 @@ void rodb_free(int* hCon)
 	free(hCon);
 }
 
+void rodbres_mark(VALUE* hQry)
+{
+	rb_gc_mark(*hQry);
+}
+
+void rodbres_free(VALUE* hQry)
+{
+	free(hQry);
+}
+
 VALUE rodb_alloc(VALUE klass)
 {
         odbHANDLE *hCon = malloc(sizeof(odbHANDLE));
 
         if(!(hCon = (odbHANDLE *)odbAllocate(NULL))) {
-                rb_raise(rb_eException, "error on odbAllocate");
+                rb_raise(rb_eArgError, "value length must be 6");
                 return Qnil;
         }
 
@@ -75,7 +65,7 @@ VALUE rodb_disconnect(VALUE klass)
         Data_Get_Struct(klass, odbHANDLE, hCon);
 
         if(!odbLogout((odbHANDLE)hCon, ODB_LOGIN_RESERVED)) {
-                rb_raise( rb_eException, "Logout Error");
+                rb_raise( rb_eException, "Logout Error:");
                 odbFree((odbHANDLE)hCon );
                 return Qnil;
         }
@@ -86,7 +76,28 @@ VALUE rodb_disconnect(VALUE klass)
 
 VALUE rodbres_new(odbHANDLE *ptr)
 {
-	return Data_Wrap_Struct(rb_cResOdbtp, 0, 0, ptr);
+	/* to leave completaly odbtp enviroment we store everything */
+	VALUE cols_hash;
+	VALUE ary;
+	int n, numCols = 0;
+
+	numCols = odbGetTotalCols((odbHANDLE)ptr);
+
+	ary = rb_ary_new2(1);
+    	while( odbFetchRow((odbHANDLE)ptr ) && !odbNoData((odbHANDLE)ptr ) ) {
+		cols_hash = rb_hash_new();
+		for(n = 1; n <= numCols; n++) {
+			rb_hash_aset(cols_hash,
+			ID2SYM(rb_intern(odbColName( (odbHANDLE)ptr, n) )) ,
+			rb_tainted_str_new2(odbColData((odbHANDLE)ptr, n)));
+		}
+		
+		rb_ary_store(ary, RARRAY(ary)->len, cols_hash);
+
+	}
+	
+	/* need to fix the free function */
+	return Data_Wrap_Struct(rb_cResOdbtp, rodbres_mark, NULL, (VALUE *)ary);
 }
 
 VALUE rodb_execquery(VALUE klass, VALUE query)
@@ -104,26 +115,19 @@ VALUE rodb_execquery(VALUE klass, VALUE query)
 		rb_raise( rb_eException, "Execute Failed: %s\n", odbGetErrorText( hQry ) );
 		return rodb_disconnect(klass);
 	}
+
 	return rodbres_new((odbHANDLE *)hQry);
 }
 
 VALUE rodbres_each(VALUE klass)
 {
-	odbHANDLE *hQry;
+	VALUE *ary;
+	int n;
 
-	int n, numCols = 0;
-	VALUE tmp_ary;
-
-	Data_Get_Struct(klass, odbHANDLE, hQry);
-
-	numCols = odbGetTotalCols((odbHANDLE)hQry);
+	Data_Get_Struct(klass, VALUE, ary);
 	
-    	while( odbFetchRow((odbHANDLE)hQry ) && !odbNoData((odbHANDLE)hQry ) ) {
-		tmp_ary = rb_ary_new2(numCols);
-		for(n = 1; n <= numCols; n++) {
-			rb_ary_push(tmp_ary, rb_tainted_str_new2(odbColData((odbHANDLE)hQry, n)));
-		}	
-		rb_yield(tmp_ary);
+	for(n=0; n < RARRAY(ary)->len; n++) {
+		rb_yield(RARRAY(ary)->ptr[n]);
 	}
 
 	return klass;
@@ -138,13 +142,28 @@ VALUE rodbres_fields(VALUE klass)
 
 	numCols = odbGetTotalCols((odbHANDLE)hQry);
 
-	VALUE hsh = rb_hash_new();
+	VALUE ary = rb_ary_new2(numCols);
 	for(n = 1; n <= numCols; n++) {
-		rb_hash_aset(hsh,
-		ID2SYM(rb_intern(odbColName( (odbHANDLE)hQry, n) )) ,
-		INT2FIX(odbColDataType( (odbHANDLE)hQry, n) ) );
+		rb_ary_push(ary, rb_tainted_str_new2(odbColName( (odbHANDLE)hQry, n) ));
 	}
-	return hsh;
+	return ary;
+}
+
+VALUE rodbres_num_tuples(VALUE klass)
+{
+	odbHANDLE *ary;
+	Data_Get_Struct(klass, odbHANDLE, ary);
+	
+	return INT2NUM(RARRAY(ary)->len);
+}
+
+VALUE rodbres_num_fields(VALUE klass)
+{
+	odbHANDLE *ary;
+
+	Data_Get_Struct(klass, odbHANDLE, ary);
+	
+	return INT2NUM(RHASH(RARRAY(ary)->ptr[0])->tbl->num_entries);
 }
 
 void Init_rodbtp()
@@ -158,6 +177,8 @@ void Init_rodbtp()
 	rb_cResOdbtp = rb_define_class("RodbRes", rb_cObject);
 	rb_include_module(rb_cResOdbtp, rb_mEnumerable);
 	rb_define_alias(rb_cResOdbtp, "result", "entries");
+	rb_define_method(rb_cResOdbtp, "ntuples", rodbres_num_tuples, 0);
 	rb_define_method(rb_cResOdbtp, "each", rodbres_each, 0);
 	rb_define_method(rb_cResOdbtp, "fields", rodbres_fields, 0);
+	rb_define_method(rb_cResOdbtp, "num_fields", rodbres_num_fields, 0);
 }

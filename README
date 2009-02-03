@@ -24,4 +24,12 @@ qry.each do |row|
 	puts row.inspect
 end
 
+for row in qry.result
+	puts row.inspect
+end
+
+puts qry.fields
+puts qry.ntuples
+puts qry.num_fields
+
 rodb.disconnect
